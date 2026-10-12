@@ -23,7 +23,7 @@ export const app = express();
 
 // Middlewares
 app.use(cors({
-  origin: true,
+  origin: process.env.CORS_ORIGIN,
   credentials: true,
 }));
 app.use(express.json());
