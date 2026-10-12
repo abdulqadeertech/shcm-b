@@ -19,13 +19,23 @@ export const loginSchema = z.object({
 
 export const registerUserSchema = z.object({
   body: z.object({
-    firstName: z.string().min(1, 'First name is required'),
-    lastName: z.string().min(1, 'Last name is required'),
+    fullName: z.string().optional(),
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
     email: z.string().email('Valid work email is required'),
     password: z.string().min(6, 'Password must be at least 6 characters'),
     phone: z.string().optional(),
     companyName: z.string().optional(),
     role: z.string().optional(),
+  }),
+});
+
+export const googleAuthSchema = z.object({
+  body: z.object({
+    email: z.string().email('Valid Google account email is required'),
+    name: z.string().optional(),
+    avatarUrl: z.string().optional(),
+    googleId: z.string().optional(),
   }),
 });
 
@@ -534,7 +544,14 @@ export const registerCompany = async (req: Request, res: Response, next: NextFun
 
 export const registerUser = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { firstName, lastName, email, password, phone, companyName } = req.body;
+    let { fullName, firstName, lastName, email, password, phone, companyName } = req.body;
+    if (fullName && (!firstName || !lastName)) {
+      const parts = String(fullName).trim().split(/\s+/);
+      firstName = parts[0] || 'User';
+      lastName = parts.slice(1).join(' ') || 'User';
+    }
+    if (!firstName) firstName = 'User';
+    if (!lastName) lastName = 'User';
     const normalizedEmail = email.toLowerCase().trim();
 
     const existing = await prisma.user.findUnique({
@@ -682,6 +699,188 @@ export const registerUser = async (req: Request, res: Response, next: NextFuncti
           role: 'EMPLOYEE',
           organization: result.org,
           employeeId: result.employee.id,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const googleAuth = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { email, name, avatarUrl } = req.body;
+    if (!email) {
+      return next(new AppError('Google account email is required', 400));
+    }
+
+    const normalizedEmail = String(email).toLowerCase().trim();
+
+    let user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      include: {
+        memberships: {
+          include: {
+            organization: true,
+          },
+        },
+        employee: true,
+      },
+    });
+
+    if (!user) {
+      // Auto-provision user from Google profile on first login
+      let firstName = 'Google';
+      let lastName = 'User';
+      if (name && typeof name === 'string' && name.trim().length > 0) {
+        const parts = name.trim().split(/\s+/);
+        firstName = parts[0] || 'Google';
+        lastName = parts.slice(1).join(' ') || 'User';
+      } else {
+        const prefix = normalizedEmail.split('@')[0] || 'user';
+        firstName = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+        lastName = 'User';
+      }
+
+      let primaryOrg = await prisma.organization.findFirst({
+        where: { status: 'ACTIVE' },
+        include: {
+          departments: true,
+          designations: true,
+          branches: true,
+          shifts: true,
+        },
+      });
+
+      if (!primaryOrg) {
+        primaryOrg = await prisma.organization.create({
+          data: {
+            name: 'SmartHCM Enterprise',
+            slug: `smarthcm-${Date.now().toString(36)}`,
+            currency: 'USD',
+            timezone: 'UTC',
+            status: 'ACTIVE',
+          },
+          include: {
+            departments: true,
+            designations: true,
+            branches: true,
+            shifts: true,
+          },
+        });
+      }
+
+      const randomPasswordHash = await bcrypt.hash(crypto.randomBytes(24).toString('hex'), 10);
+
+      const created = await prisma.$transaction(async (tx) => {
+        const newUser = await tx.user.create({
+          data: {
+            email: normalizedEmail,
+            passwordHash: randomPasswordHash,
+            firstName,
+            lastName,
+            avatarUrl: avatarUrl || null,
+            isActive: true,
+            isSuperAdmin: false,
+            emailVerified: true,
+            emailVerifiedAt: new Date(),
+          },
+        });
+
+        const membership = await tx.organizationMembership.create({
+          data: {
+            userId: newUser.id,
+            organizationId: primaryOrg!.id,
+            role: 'EMPLOYEE',
+            isDefault: true,
+          },
+        });
+
+        const empCount = await tx.employee.count({ where: { organizationId: primaryOrg!.id } });
+        const empCode = `EMP-${String(empCount + 1).padStart(3, '0')}`;
+
+        const employee = await tx.employee.create({
+          data: {
+            organizationId: primaryOrg!.id,
+            userId: newUser.id,
+            employeeCode: empCode,
+            firstName,
+            lastName,
+            email: normalizedEmail,
+            departmentId: primaryOrg!.departments[0]?.id || null,
+            designationId: primaryOrg!.designations[0]?.id || null,
+            branchId: primaryOrg!.branches[0]?.id || null,
+            shiftId: primaryOrg!.shifts[0]?.id || null,
+            employmentType: 'FULL_TIME',
+            employmentStatus: 'ACTIVE',
+          },
+        });
+
+        return { user: newUser, membership, employee, org: primaryOrg! };
+      });
+
+      user = await prisma.user.findUnique({
+        where: { id: created.user.id },
+        include: {
+          memberships: {
+            include: {
+              organization: true,
+            },
+          },
+          employee: true,
+        },
+      });
+    }
+
+    if (!user || !user.isActive) {
+      return next(new AppError('Account is inactive or suspended. Please contact your administrator.', 403));
+    }
+
+    const defaultMembership = user.memberships.find((m) => m.isDefault) || user.memberships[0];
+    const organizationId = defaultMembership?.organizationId || '';
+
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        organizationId,
+      },
+      config.jwtSecret,
+      { expiresIn: config.jwtExpiresIn } as jwt.SignOptions
+    );
+
+    if (organizationId) {
+      await logAuditEvent({
+        organizationId,
+        actorId: user.id,
+        actorEmail: user.email,
+        action: 'USER_GOOGLE_LOGIN',
+        entityType: 'USER',
+        entityId: user.id,
+        ipAddress: req.ip,
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Google login successful',
+      data: {
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          phone: user.phone,
+          isSuperAdmin: user.isSuperAdmin,
+          role: defaultMembership?.role || (user.isSuperAdmin ? 'PLATFORM_SUPER_ADMIN' : 'EMPLOYEE'),
+          organization: defaultMembership?.organization || null,
+          employeeId: user.employee?.id || null,
+          allOrganizations: user.memberships.map((m) => ({
+            id: m.organization.id,
+            name: m.organization.name,
+            slug: m.organization.slug,
+            role: m.role,
+          })),
         },
       },
     });

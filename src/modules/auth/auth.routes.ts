@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   login,
+  googleAuth,
   getMe,
   registerUser,
   registerCompany,
@@ -14,6 +15,7 @@ import {
   getNotifications,
   markNotificationRead,
   loginSchema,
+  googleAuthSchema,
   registerUserSchema,
   registerCompanySchema,
   forgotPasswordSchema,
@@ -28,6 +30,7 @@ const router = Router();
 
 // Public Authentication & Onboarding Routes
 router.post('/login', validate(loginSchema), login);
+router.post('/google', validate(googleAuthSchema), googleAuth);
 router.post('/register', validate(registerUserSchema), registerUser);
 router.post('/signup', validate(registerUserSchema), registerUser);
 router.post('/register-company', validate(registerCompanySchema), registerCompany);

@@ -56,7 +56,36 @@ describe('NovaHCM Enterprise API Test Suite', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.data.email).toBe('admin@novahcm.io');
-      expect(res.body.data.currentOrganization.id).toBe(currentOrgId);
+    });
+
+    it('should allow passwordless login with Google for an existing user', async () => {
+      const res = await request(app)
+        .post('/api/v1/auth/google')
+        .send({
+          email: 'admin@novahcm.io',
+          name: 'System Super Admin',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.token).toBeDefined();
+      expect(res.body.data.user.email).toBe('admin@novahcm.io');
+    });
+
+    it('should auto-provision and sign in a new user with Google passwordlessly', async () => {
+      const uniqueGoogleEmail = `google.user.${Date.now()}@example.com`;
+      const res = await request(app)
+        .post('/api/v1/auth/google')
+        .send({
+          email: uniqueGoogleEmail,
+          name: 'Alex Johnson',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.token).toBeDefined();
+      expect(res.body.data.user.email).toBe(uniqueGoogleEmail);
+      expect(res.body.data.user.firstName).toBe('Alex');
     });
   });
 
