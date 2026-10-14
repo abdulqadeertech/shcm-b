@@ -18,8 +18,10 @@ import auditRoutes from './modules/audit/audit.routes.js';
 import workflowRoutes from './modules/workflow/workflow.routes.js';
 import systemRoutes from './modules/system/system.routes.js';
 import superadminRoutes from './modules/superadmin/superadmin.routes.js';
+import contactRoutes from './modules/contact/contact.routes.js';
 
 export const app = express();
+
 
 // Robust CORS Handling
 app.use((req, res, next) => {
@@ -72,6 +74,8 @@ app.use('/api/v1/audit', auditRoutes);
 app.use('/api/v1/workflows', workflowRoutes);
 app.use('/api/v1/system', systemRoutes);
 app.use('/api/v1/superadmin', superadminRoutes);
+app.use('/api/v1/contact', contactRoutes);
 
 // Centralized Error Handling
+
 app.use(errorHandler);

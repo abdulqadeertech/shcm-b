@@ -15,4 +15,8 @@ export const config = {
   smtpFrom: process.env.SMTP_FROM || 'SmartHCM Security <no-reply@smarthcm.io>',
   smtpSecure: process.env.SMTP_SECURE === 'true',
   requireEmailVerification: process.env.REQUIRE_EMAIL_VERIFICATION === 'true',
+  leadNotificationEmail: process.env.LEAD_NOTIFICATION_EMAIL || 'aq0871633@gmail.com',
+  contactPhone1: process.env.CONTACT_PHONE_1 || '03373029707',
+  contactPhone2: process.env.CONTACT_PHONE_2 || '03273726496',
 };
+

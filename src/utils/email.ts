@@ -179,3 +179,131 @@ export const sendPasswordResetEmail = async (
     };
   }
 };
+
+export interface LeadNotificationPayload {
+  fullName: string;
+  email: string;
+  phone: string;
+  companyName: string;
+  teamSize?: string;
+  moduleInterest?: string;
+  source?: string;
+  message?: string;
+  type?: string;
+}
+
+export const sendLeadNotificationEmail = async (
+  payload: LeadNotificationPayload
+): Promise<EmailDispatchResult> => {
+  const { transporter, isRealSmtp } = await getTransporter();
+  const recipient = config.leadNotificationEmail || 'aq0871633@gmail.com';
+  const typeLabel = payload.type ? payload.type.replace(/_/g, ' ') : 'Contact Inquiry';
+  const subject = `🚀 New SmartHCM Lead: ${payload.companyName || 'Visitor'} (${payload.fullName})`;
+
+  const safePhone = (payload.phone || '').trim();
+  const rawDigits = safePhone.replace(/[^0-9]/g, '');
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>New SmartHCM Contact Lead</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #051720; color: #f8fafc; margin: 0; padding: 20px; }
+        .card { max-width: 600px; margin: 0 auto; background-color: #08222f; border: 1px solid #14425b; border-radius: 16px; padding: 28px; }
+        .badge { display: inline-block; background-color: #ff6f32; color: #ffffff; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 12px; }
+        h1 { color: #ffffff; font-size: 20px; margin-top: 0; border-bottom: 1px solid #14425b; padding-bottom: 12px; }
+        .row { display: flex; padding: 8px 0; border-bottom: 1px solid #0e3547; font-size: 13px; }
+        .label { width: 140px; color: #94a3b8; font-weight: 600; }
+        .value { color: #f1f5f9; flex: 1; }
+        .msg-box { background-color: #051822; border: 1px solid #14425b; padding: 14px; border-radius: 8px; color: #e2e8f0; font-size: 13px; margin-top: 14px; line-height: 1.5; }
+        .action-btns { margin-top: 20px; text-align: center; }
+        .btn-call { display: inline-block; background-color: #10b981; color: white; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 13px; margin-right: 8px; }
+        .btn-wa { display: inline-block; background-color: #25D366; color: white; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 13px; margin-right: 8px; }
+        .btn-email { display: inline-block; background-color: #ff6f32; color: white; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 13px; }
+        .footer { font-size: 11px; color: #64748b; margin-top: 24px; text-align: center; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <span class="badge">${typeLabel}</span>
+        <h1>⚡ New Lead Received on SmartHCM</h1>
+        
+        <div class="row">
+          <div class="label">Client Name:</div>
+          <div class="value"><strong>${payload.fullName}</strong></div>
+        </div>
+        <div class="row">
+          <div class="label">Company:</div>
+          <div class="value"><strong>${payload.companyName || 'N/A'}</strong></div>
+        </div>
+        <div class="row">
+          <div class="label">Phone:</div>
+          <div class="value"><a href="tel:${safePhone}" style="color: #38bdf8; text-decoration: none;">${safePhone}</a></div>
+        </div>
+        <div class="row">
+          <div class="label">Email:</div>
+          <div class="value"><a href="mailto:${payload.email}" style="color: #38bdf8; text-decoration: none;">${payload.email}</a></div>
+        </div>
+        ${payload.teamSize ? `
+        <div class="row">
+          <div class="label">Team Size:</div>
+          <div class="value">${payload.teamSize}</div>
+        </div>` : ''}
+        ${payload.moduleInterest ? `
+        <div class="row">
+          <div class="label">Module Interest:</div>
+          <div class="value">${payload.moduleInterest}</div>
+        </div>` : ''}
+        ${payload.source ? `
+        <div class="row">
+          <div class="label">Source:</div>
+          <div class="value">${payload.source}</div>
+        </div>` : ''}
+
+        <div style="margin-top: 14px; font-size: 12px; color: #94a3b8; font-weight: 600;">Message / Requirements:</div>
+        <div class="msg-box">
+          ${(payload.message || 'No additional message provided.').replace(/\n/g, '<br/>')}
+        </div>
+
+        <div class="action-btns">
+          <a href="tel:${safePhone.replace(/[^0-9+]/g, '')}" class="btn-call">📞 Call Client</a>
+          <a href="https://wa.me/${rawDigits}" class="btn-wa">💬 WhatsApp Client</a>
+          <a href="mailto:${payload.email}?subject=${encodeURIComponent(`SmartHCM Follow-up: ${payload.companyName || payload.fullName}`)}" class="btn-email">✉️ Reply Email</a>
+        </div>
+
+        <div class="footer">
+          Timestamp: ${new Date().toLocaleString()} | Direct Delivery to: ${recipient}
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  try {
+    const info = await transporter.sendMail({
+      from: config.smtpFrom,
+      to: recipient,
+      subject,
+      html,
+    });
+    console.log(`[Lead Email Dispatched] Successfully sent notification to ${recipient} (Message ID: ${info.messageId})`);
+    return {
+      success: true,
+      messageId: info.messageId,
+      isRealSmtp,
+      recipient,
+      subject,
+    };
+  } catch (err: any) {
+    console.error('Lead notification email dispatch error:', err);
+    return {
+      success: false,
+      isRealSmtp,
+      recipient,
+      subject,
+    };
+  }
+};
+
