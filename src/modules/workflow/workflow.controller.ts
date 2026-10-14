@@ -233,6 +233,15 @@ export const actOnApprovalRequest = async (req: AuthenticatedRequest, res: Respo
       return next(new AppError(`Unauthorized: Requires ${currentStep.approverRole} or active delegation to act on this step`, 403));
     }
 
+    // Prevent Self-Approval: Requester cannot act on their own approval step unless Super Admin or Org Admin
+    if (
+      (approvalReq.requesterId === req.user?.employeeId || approvalReq.requesterId === req.user?.id) &&
+      !['ORG_ADMIN', 'PLATFORM_SUPER_ADMIN'].includes(req.user?.role || '') &&
+      !req.user?.isSuperAdmin
+    ) {
+      return next(new AppError('Forbidden: You cannot review or approve your own workflow request.', 403));
+    }
+
     // Record Action
     const recordAction = await prisma.approvalAction.create({
       data: {

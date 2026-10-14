@@ -275,13 +275,25 @@ export const requestCorrection = async (req: AuthenticatedRequest, res: Response
       return next(new AppError('Missing required fields for correction', 400));
     }
 
+    const corrDate = new Date(date);
+    const inDate = new Date(requestedClockIn);
+    const outDate = new Date(requestedClockOut);
+
+    if (isNaN(corrDate.getTime()) || isNaN(inDate.getTime()) || isNaN(outDate.getTime())) {
+      return next(new AppError('Invalid date or time format provided', 400));
+    }
+
+    if (inDate >= outDate) {
+      return next(new AppError('Requested clock-out must be after requested clock-in', 400));
+    }
+
     const correction = await prisma.attendanceCorrectionRequest.create({
       data: {
         organizationId: orgId!,
         employeeId,
-        date: new Date(date),
-        requestedClockIn: new Date(requestedClockIn),
-        requestedClockOut: new Date(requestedClockOut),
+        date: corrDate,
+        requestedClockIn: inDate,
+        requestedClockOut: outDate,
         reason,
         status: 'PENDING',
       },
@@ -347,6 +359,17 @@ export const reviewCorrection = async (req: AuthenticatedRequest, res: Response,
     });
 
     if (!correction) return next(new AppError('Correction request not found', 404));
+
+    // Prevent Self-Approval: Managers and employees cannot approve their own attendance correction
+    if (
+      correction.employeeId === req.user?.employeeId &&
+      !['ORG_ADMIN', 'PLATFORM_SUPER_ADMIN'].includes(req.user?.role || '') &&
+      !req.user?.isSuperAdmin
+    ) {
+      return next(
+        new AppError('Forbidden: Managers and employees cannot approve their own attendance corrections. Requires HR or Company Administration review.', 403)
+      );
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       const reviewed = await tx.attendanceCorrectionRequest.update({
@@ -424,6 +447,9 @@ export const requestOvertime = async (req: AuthenticatedRequest, res: Response, 
     }
 
     const otDate = new Date(date);
+    if (isNaN(otDate.getTime())) {
+      return next(new AppError('Invalid date format for overtime request', 400));
+    }
     otDate.setHours(0, 0, 0, 0);
 
     const overtime = await prisma.overtimeRequest.create({
@@ -527,6 +553,17 @@ export const reviewOvertimeRequest = async (req: AuthenticatedRequest, res: Resp
     if (!existing) return next(new AppError('Overtime request not found in your organization workspace', 404));
     if (existing.status !== 'PENDING') {
       return next(new AppError(`This overtime request is already finalized (${existing.status})`, 400));
+    }
+
+    // Prevent Self-Approval: Managers and employees cannot approve their own overtime request
+    if (
+      existing.employeeId === req.user?.employeeId &&
+      !['ORG_ADMIN', 'PLATFORM_SUPER_ADMIN'].includes(req.user?.role || '') &&
+      !req.user?.isSuperAdmin
+    ) {
+      return next(
+        new AppError('Forbidden: Managers and employees cannot approve their own overtime requests. Requires HR or Company Administration review.', 403)
+      );
     }
 
     const updated = await prisma.$transaction(async (tx) => {

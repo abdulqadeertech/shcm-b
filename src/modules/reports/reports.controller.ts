@@ -122,10 +122,12 @@ export const getAdvancedAnalytics = async (req: AuthenticatedRequest, res: Respo
     const orgId = req.user?.organizationId;
     if (!orgId) return next(new AppError('Organization context missing', 400));
 
-    const { startDate, endDate, departmentId } = req.query;
+    const { startDate, endDate, from, to, departmentId } = req.query;
+    const startRaw = startDate || from;
+    const endRaw = endDate || to;
 
-    const start = startDate ? new Date(String(startDate)) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const end = endDate ? new Date(String(endDate)) : new Date();
+    const start = startRaw ? new Date(String(startRaw)) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const end = endRaw ? new Date(String(endRaw)) : new Date();
 
     const empWhere: any = { organizationId: orgId, employmentStatus: 'ACTIVE' };
     if (departmentId) empWhere.departmentId = String(departmentId);

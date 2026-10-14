@@ -219,6 +219,17 @@ export const reviewLeaveRequest = async (req: AuthenticatedRequest, res: Respons
     if (!request) return next(new AppError('Leave request not found', 404));
     if (request.status !== 'PENDING') return next(new AppError('Leave request is already finalized', 400));
 
+    // Prevent Self-Approval: Managers and employees cannot approve their own leave request
+    if (
+      request.employeeId === req.user?.employeeId &&
+      !['ORG_ADMIN', 'PLATFORM_SUPER_ADMIN'].includes(req.user?.role || '') &&
+      !req.user?.isSuperAdmin
+    ) {
+      return next(
+        new AppError('Forbidden: Managers and employees cannot approve their own leave requests. Requires HR or Company Administration review.', 403)
+      );
+    }
+
     const currentYear = request.startDate.getFullYear();
 
     const updated = await prisma.$transaction(async (tx) => {
