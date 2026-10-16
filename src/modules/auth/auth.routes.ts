@@ -44,6 +44,7 @@ router.post('/resend-verification', validate(resendVerificationSchema), resendVe
 // Authenticated Session & Tenant Switcher Routes
 router.get('/me', authenticate, getMe);
 router.post('/switch-org', authenticate, switchOrganization);
+router.post('/switch-workspace', authenticate, switchOrganization);
 router.get('/notifications', authenticate, getNotifications);
 router.patch('/notifications/:id/read', authenticate, markNotificationRead);
 router.post('/logout', authenticate, (req, res) => {

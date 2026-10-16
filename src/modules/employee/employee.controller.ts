@@ -162,7 +162,7 @@ export const createEmployee = async (req: AuthenticatedRequest, res: Response, n
       );
     }
 
-    if (org?.maxEmployees) {
+    if (org?.maxEmployees && !req.user?.isSuperAdmin) {
       const activeEmployeeCount = await prisma.employee.count({
         where: { organizationId: orgId, employmentStatus: 'ACTIVE' },
       });
